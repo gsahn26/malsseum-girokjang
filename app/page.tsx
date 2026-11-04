@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 import {
   addBookSelection,
+  claimSessionToken,
   fetchBookSelections,
   fetchProfile,
+  fetchSessionToken,
   fetchUserEvents,
   insertEvent,
   removeBookSelection,
@@ -26,6 +28,8 @@ import BottomNav, { type Tab } from "@/components/BottomNav";
 type Phase = "loading" | "login" | "nickname" | "selectBook" | "app" | "error";
 
 const IDLE_LOGOUT_MS = 5 * 60 * 1000;
+const SESSION_POLL_MS = 20 * 1000;
+const SESSION_TOKEN_KEY = "mg_session_token";
 
 export interface BookEntry {
   book: Book;
@@ -46,6 +50,26 @@ export default function Home() {
   const [bookSaving, setBookSaving] = useState(false);
   const [bookError, setBookError] = useState<string | null>(null);
   const [addingBook, setAddingBook] = useState(false);
+  const [kickedOut, setKickedOut] = useState(false);
+  const myTokenRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    try {
+      myTokenRef.current = sessionStorage.getItem(SESSION_TOKEN_KEY);
+    } catch {
+      // sessionStorage unavailable (e.g. private mode) — duplicate-login detection just won't engage.
+    }
+  }, []);
+
+  async function claimSession() {
+    try {
+      const token = await claimSessionToken();
+      myTokenRef.current = token;
+      sessionStorage.setItem(SESSION_TOKEN_KEY, token);
+    } catch {
+      // best-effort — if this fails, duplicate-login detection just won't engage this time.
+    }
+  }
 
   async function loadBooksAndEvents() {
     const selections = await fetchBookSelections();
@@ -72,12 +96,13 @@ export default function Home() {
   useEffect(() => {
     let cancelled = false;
 
-    async function handleSession(nextSession: Session | null) {
+    async function handleSession(nextSession: Session | null, event?: string) {
       setSession(nextSession);
       if (!nextSession) {
         setPhase("login");
         return;
       }
+      setKickedOut(false);
       try {
         const existingProfile = await fetchProfile();
         if (cancelled) return;
@@ -86,6 +111,12 @@ export default function Home() {
           return;
         }
         setProfile(existingProfile);
+        // 명시적으로 로그인 버튼을 눌러 완료된 로그인일 때만 세션을 새로 "점유"한다.
+        // (탭을 새로고침한 것뿐인 INITIAL_SESSION에서는 재점유하지 않아야,
+        //  다른 기기가 억울하게 튕기지 않는다.)
+        if (event === "SIGNED_IN") {
+          await claimSession();
+        }
         if (cancelled) return;
         await loadBooksAndEvents();
       } catch (err) {
@@ -96,11 +127,11 @@ export default function Home() {
     }
 
     supabase.auth.getSession().then(({ data }) => {
-      if (!cancelled) handleSession(data.session);
+      if (!cancelled) handleSession(data.session, "INITIAL_SESSION");
     });
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      handleSession(nextSession);
+    const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      handleSession(nextSession, event);
     });
 
     return () => {
@@ -129,6 +160,28 @@ export default function Home() {
       clearTimeout(timer);
       activityEvents.forEach((event) => window.removeEventListener(event, resetTimer));
     };
+  }, [session]);
+
+  // 다른 기기/탭에서 같은 계정으로 로그인하면 session_token이 바뀌는데,
+  // 주기적으로 서버 값을 확인해서 내가 점유한 토큰과 다르면 로그아웃한다.
+  useEffect(() => {
+    if (!session) return;
+
+    const interval = setInterval(async () => {
+      const mine = myTokenRef.current;
+      if (!mine) return;
+      try {
+        const serverToken = await fetchSessionToken();
+        if (serverToken && serverToken !== mine) {
+          setKickedOut(true);
+          await supabase.auth.signOut();
+        }
+      } catch {
+        // 네트워크 문제 등 — 다음 주기에 다시 확인
+      }
+    }, SESSION_POLL_MS);
+
+    return () => clearInterval(interval);
   }, [session]);
 
   async function handleLogout() {
@@ -195,7 +248,11 @@ export default function Home() {
   }
 
   if (phase === "login") {
-    return <LoginScreen />;
+    return (
+      <LoginScreen
+        notice={kickedOut ? "다른 기기에서 로그인되어 자동 로그아웃되었습니다." : undefined}
+      />
+    );
   }
 
   if (phase === "error") {
@@ -218,6 +275,7 @@ export default function Home() {
       <NicknameScreen
         onDone={(created) => {
           setProfile(created);
+          claimSession();
           loadBooksAndEvents().catch((err) => {
             setLoadError(err instanceof Error ? err.message : "불러오는 중 문제가 발생했습니다.");
             setPhase("error");

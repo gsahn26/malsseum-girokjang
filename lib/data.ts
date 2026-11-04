@@ -68,6 +68,16 @@ export async function insertEvent(bookId: string, day: number, kind: EventKind):
   await apiPost<{ ok: true }>("/api/events", { bookId, day, kind });
 }
 
+export async function claimSessionToken(): Promise<string> {
+  const { sessionToken } = await apiPost<{ sessionToken: string }>("/api/session", {});
+  return sessionToken;
+}
+
+export async function fetchSessionToken(): Promise<string | null> {
+  const { sessionToken } = await apiGet<{ sessionToken: string | null }>("/api/session");
+  return sessionToken;
+}
+
 export interface ChurchRow {
   userId: string;
   nickname: string;
