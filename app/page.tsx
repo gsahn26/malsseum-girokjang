@@ -25,6 +25,8 @@ import BottomNav, { type Tab } from "@/components/BottomNav";
 
 type Phase = "loading" | "login" | "nickname" | "selectBook" | "app" | "error";
 
+const IDLE_LOGOUT_MS = 5 * 60 * 1000;
+
 export interface BookEntry {
   book: Book;
   planDays: PlanDay[];
@@ -106,6 +108,32 @@ export default function Home() {
       listener.subscription.unsubscribe();
     };
   }, []);
+
+  // 5분 동안 아무 활동이 없으면 자동 로그아웃.
+  useEffect(() => {
+    if (!session) return;
+
+    let timer: ReturnType<typeof setTimeout>;
+    function resetTimer() {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        supabase.auth.signOut();
+      }, IDLE_LOGOUT_MS);
+    }
+
+    const activityEvents = ["mousemove", "mousedown", "keydown", "touchstart", "scroll"] as const;
+    activityEvents.forEach((event) => window.addEventListener(event, resetTimer));
+    resetTimer();
+
+    return () => {
+      clearTimeout(timer);
+      activityEvents.forEach((event) => window.removeEventListener(event, resetTimer));
+    };
+  }, [session]);
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+  }
 
   async function handleSelectBook(bookId: string) {
     if (!session || bookSaving) return;
@@ -232,6 +260,11 @@ export default function Home() {
 
     return (
       <div className="flex min-h-dvh flex-col">
+        <div className="flex justify-end px-5 pt-3">
+          <button type="button" onClick={handleLogout} className="text-xs text-muted underline">
+            로그아웃
+          </button>
+        </div>
         {tab === "plan" && (
           <PlanScreen
             nickname={profile.nickname}
