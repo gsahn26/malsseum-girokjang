@@ -80,7 +80,7 @@ export default function Home() {
   useEffect(() => {
     let cancelled = false;
 
-    async function handleSession(nextSession: Session | null, event?: string) {
+    async function handleSession(nextSession: Session | null, event?: string, isRetry = false) {
       setSession(nextSession);
       if (!nextSession) {
         setPhase("login");
@@ -103,7 +103,13 @@ export default function Home() {
       } catch (err) {
         if (cancelled) return;
         if (err instanceof Error && err.message === "unauthorized") {
-          // 세션이 서버에서 이미 무효화된 상태 — 에러 화면 대신 로그인으로.
+          if (!isRetry) {
+            // 로그인 직후엔 토큰이 아직 완전히 반영되지 않았을 수 있으니 한 번만 재시도.
+            await new Promise((resolve) => setTimeout(resolve, 800));
+            if (!cancelled) await handleSession(nextSession, event, true);
+            return;
+          }
+          // 재시도에도 실패 — 세션이 서버에서 이미 무효화된 상태.
           await supabase.auth.signOut();
           setPhase("login");
           return;
