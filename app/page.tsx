@@ -96,7 +96,7 @@ export default function Home() {
   useEffect(() => {
     let cancelled = false;
 
-    async function handleSession(nextSession: Session | null, event?: string) {
+    async function handleSession(nextSession: Session | null, event?: string, isRetry = false) {
       setSession(nextSession);
       if (!nextSession) {
         setPhase("login");
@@ -121,6 +121,17 @@ export default function Home() {
         await loadBooksAndEvents();
       } catch (err) {
         if (cancelled) return;
+        if (err instanceof Error && err.message === "unauthorized") {
+          if (!isRetry) {
+            // 로그인 직후 토큰 전파 지연 등 일시적 문제일 수 있으니 한 번만 재시도.
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+            if (!cancelled) await handleSession(nextSession, event, true);
+            return;
+          }
+          await supabase.auth.signOut();
+          setPhase("login");
+          return;
+        }
         setLoadError(err instanceof Error ? err.message : "불러오는 중 문제가 발생했습니다.");
         setPhase("error");
       }
