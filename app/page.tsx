@@ -174,11 +174,13 @@ export default function Home() {
   }, [session]);
 
   // 다른 기기/탭에서 같은 계정으로 로그인하면 session_token이 바뀌는데,
-  // 주기적으로 서버 값을 확인해서 내가 점유한 토큰과 다르면 로그아웃한다.
+  // 주기적으로(+ 탭이 다시 보일 때마다) 서버 값을 확인해서 내가 점유한
+  // 토큰과 다르면 로그아웃한다. 백그라운드 탭은 브라우저가 타이머를 늦출 수
+  // 있어서, 탭으로 돌아오는 즉시도 한 번 더 확인해야 체감 지연이 없다.
   useEffect(() => {
     if (!session) return;
 
-    const interval = setInterval(async () => {
+    async function checkSession() {
       const mine = myTokenRef.current;
       if (!mine) return;
       try {
@@ -188,11 +190,23 @@ export default function Home() {
           await supabase.auth.signOut();
         }
       } catch {
-        // 네트워크 문제 등 — 다음 주기에 다시 확인
+        // 네트워크 문제 등 — 다음 기회에 다시 확인
       }
-    }, SESSION_POLL_MS);
+    }
 
-    return () => clearInterval(interval);
+    const interval = setInterval(checkSession, SESSION_POLL_MS);
+
+    function handleVisibility() {
+      if (document.visibilityState === "visible") checkSession();
+    }
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("focus", checkSession);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("focus", checkSession);
+    };
   }, [session]);
 
   async function handleLogout() {
