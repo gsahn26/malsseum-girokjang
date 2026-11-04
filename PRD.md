@@ -156,13 +156,32 @@ Supabase(Postgres + Auth)를 사용한다. 기존 목양교회 인스턴스를 �
 
 ## 기술 스택·배포
 
-- **Next.js (App Router) + TypeScript + Tailwind CSS**
-- **Supabase** — Auth(Google) + Postgres. REST API 직접 호출, RLS로 소유권 강제
-- **Vercel** 배포 (정적 페이지 + 클라이언트에서만 Supabase 호출, 자체 서버 없음) — https://malsseum-girokjang.vercel.app
+**구조 (3-tier)**
+
+```
+[프론트엔드]              [백엔드]                      [DB]
+Next.js 클라이언트   →   Next.js API Routes      →   Supabase Postgres
+컴포넌트(React)          (/app/api/*, 서버에서 실행)      (RLS로 소유권 강제)
+```
+
+- **프론트엔드**: Next.js (App Router) + TypeScript + Tailwind CSS. "use client" 컴포넌트는
+  더 이상 Supabase를 직접 호출하지 않고, 우리 자체 API(`/app/api/*`)만 `fetch`로 호출한다
+  (`lib/data.ts`가 그 호출 창구)
+- **백엔드**: Next.js Route Handlers — `/app/api/profile`, `/app/api/book-selection`,
+  `/app/api/events`, `/app/api/church`. 각 요청은 `Authorization: Bearer <토큰>` 헤더로
+  로그인한 사용자를 식별하고(`lib/supabaseServer.ts`), 그 사용자 권한으로 Supabase를 호출한다.
+  교회 현황(`/api/church`)처럼 여러 테이블을 모아 계산하는 로직도 여기(백엔드)에 있다
+- **DB**: Supabase Postgres. 권한 검증은 여전히 Postgres RLS가 맡는다 — 백엔드 계층은
+  "신뢰할 수 있는 중계"일 뿐, RLS를 우회하지 않는다(사용자의 토큰으로 호출하므로 기존
+  RLS 정책이 그대로 적용됨)
+- **Vercel** 배포 — 프론트엔드 정적 자산과 백엔드 API Routes가 같은 프로젝트로 배포된다
+  (서버 함수는 Vercel이 자동으로 서버리스 함수로 실행) — https://malsseum-girokjang.vercel.app
 - 환경변수: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-  (로컬은 `.env.local`, 깃에는 미포함. Vercel에는 Production/Preview 환경변수로 등록됨)
+  (로컬은 `.env.local`, 깃에는 미포함. Vercel에는 Production/Preview 환경변수로 등록됨.
+  API Routes도 같은 anon key를 쓰되, 요청자의 토큰을 실어 보내 RLS를 그대로 적용한다)
 - Supabase 대시보드에서 **Google provider**를 활성화해야 로그인이 동작한다
   (Google Cloud Console에서 OAuth 클라이언트 ID를 만들고 Client ID·Secret을 Supabase에 등록 — 가이드 참조)
+- 저장소: https://github.com/gsahn26/malsseum-girokjang (public)
 
 ## 완주 기준 (Definition of Done)
 
@@ -193,6 +212,8 @@ Supabase(Postgres + Auth)를 사용한다. 기존 목양교회 인스턴스를 �
 
 | 날짜 | 커밋 | 구분 | 변경 내용 | 검증 | 배포 |
 | --- | --- | --- | --- | --- | --- |
+| 2026-11-04 | — | 문서 | GitHub 저장소 생성(공개) — https://github.com/gsahn26/malsseum-girokjang. 과제 제출 요건(프론트-백엔드-DB 3단 구조)에 맞춰 아키텍처 변경 결정 | — | — |
+| 2026-11-04 | — | 기능 | 프론트엔드가 Supabase를 직접 호출하던 구조를 Next.js API Routes(`/app/api/profile`, `/book-selection`, `/events`, `/church`)를 거치는 **3-tier**로 전환. `lib/supabaseServer.ts`(요청자 토큰으로 인증하는 서버 전용 클라이언트) 신규, `lib/data.ts`를 Supabase 직접 호출에서 우리 API를 호출하는 fetch 래퍼로 전면 재작성, 교회현황 집계 로직을 백엔드(`/api/church`)로 이동 | `npx tsc --noEmit`, `npm run lint`, `npm run build` 통과. 로컬에서 `curl`로 4개 API 라우트가 토큰 없이는 401을 반환하는 것, 잘못된 토큰도 401을 반환하는 것 확인. 브라우저로 로그인 화면 정상 렌더링·콘솔 에러 없음 확인. 실제 로그인 후 전체 플로우는 아직 미검증 | 미배포 |
 | 2026-11-04 | — | 기능 | 고정된 "28일 창세기" 플랜을 구약·신약 66권 전체로 확장. `lib/books.ts`(66권 장 수 데이터) 신규, `lib/plan.ts`를 책별 자동 플랜 생성 함수로 일반화(2장/일, 홀수면 마지막 날 1장), `church_book_selections` 테이블·`church_reading_events.book_id` 컬럼 추가(`sql/migration_002_books.sql`), `BookSelectScreen` 신규, Plan/Stats/Share/Church 화면을 선택한 책 기준으로 동적 표시하도록 수정. 창세기는 자동 규칙 적용 시 28일이 아닌 25일 플랜이 됨(기존 수동 설계와 다름) | `npx tsc --noEmit`, `npm run lint`, `npm run build` 통과. 로컬 `next dev` + 브라우저에서 더미 세션으로 구약/신약 탭 전환·66권 목록(장 수·일수 표시)·책 변경·플랜/내통계/공유 화면이 선택한 책 기준으로 바뀌는 것 확인. 실제 로그인 플로우로는 아직 미검증(마이그레이션 SQL을 Supabase에 실행해야 함) | 미배포 |
 | 2026-11-04 | 29bc440 | 버그 | 프로필/기록 조회 실패 시 "불러오는 중..."에 무한 로딩되던 문제 수정 — 에러 화면 + 재시도 버튼 추가 | 실제 배포 사이트에서 테이블 미생성으로 인한 404 상황을 에러 화면으로 정상 표시하는 것을 사용자가 확인 | 배포됨 (malsseum-girokjang.vercel.app) |
 | 2026-11-04 | 8d84e0f | 기능·보안 | 로그인을 카카오에서 Google OAuth로 변경 — 카카오 로그인의 이메일 동의항목(account_email) 사용에 사업자 등록이 필요해 막혀서 전환. PRD·schema.sql 주석도 함께 갱신 | 로컬·배포 사이트 모두에서 "Google로 시작하기" 클릭 시 Supabase가 provider=google로 정상 호출하는 것을 확인(이후 사용자가 Supabase Google provider·Google Cloud OAuth 클라이언트 설정 완료, 실제 로그인 성공까지 확인) | 배포됨 (malsseum-girokjang.vercel.app) |

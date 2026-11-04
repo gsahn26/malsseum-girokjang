@@ -5,10 +5,8 @@ import { createProfile } from "@/lib/data";
 import type { Profile } from "@/lib/types";
 
 export default function NicknameScreen({
-  userId,
   onDone,
 }: {
-  userId: string;
   onDone: (profile: Profile) => void;
 }) {
   const [nickname, setNickname] = useState("");
@@ -24,7 +22,7 @@ export default function NicknameScreen({
     setSaving(true);
     setError(null);
     try {
-      const profile = await createProfile(userId, trimmed);
+      const profile = await createProfile(trimmed);
       onDone(profile);
     } catch (err) {
       setError(err instanceof Error ? err.message : "닉네임을 저장하지 못했습니다.");

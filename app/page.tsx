@@ -3,14 +3,7 @@
 import { useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
-import {
-  fetchBookSelection,
-  fetchProfile,
-  fetchUserEvents,
-  insertEvent,
-  saveBookSelection,
-  stateFromEvents,
-} from "@/lib/data";
+import { fetchBookSelection, fetchProfile, fetchUserEvents, insertEvent, saveBookSelection } from "@/lib/data";
 import { findBook, type Book } from "@/lib/books";
 import { buildPlanDays, type PlanDay } from "@/lib/plan";
 import type { DayState, Profile } from "@/lib/types";
@@ -38,6 +31,21 @@ export default function Home() {
   const [bookSaving, setBookSaving] = useState(false);
   const [bookError, setBookError] = useState<string | null>(null);
 
+  async function loadBookAndEvents() {
+    const selection = await fetchBookSelection();
+    const selectedBook = selection ? findBook(selection.book_id) : undefined;
+    if (!selectedBook) {
+      setPhase("selectBook");
+      return;
+    }
+    const days = buildPlanDays(selectedBook);
+    const state = await fetchUserEvents(selectedBook.id);
+    setBook(selectedBook);
+    setPlanDays(days);
+    setDayState(state);
+    setPhase("app");
+  }
+
   useEffect(() => {
     let cancelled = false;
 
@@ -48,28 +56,15 @@ export default function Home() {
         return;
       }
       try {
-        const existingProfile = await fetchProfile(nextSession.user.id);
+        const existingProfile = await fetchProfile();
         if (cancelled) return;
         if (!existingProfile) {
           setPhase("nickname");
           return;
         }
         setProfile(existingProfile);
-
-        const selection = await fetchBookSelection(nextSession.user.id);
         if (cancelled) return;
-        const selectedBook = selection ? findBook(selection.book_id) : undefined;
-        if (!selectedBook) {
-          setPhase("selectBook");
-          return;
-        }
-        const days = buildPlanDays(selectedBook);
-        const events = await fetchUserEvents(nextSession.user.id, selectedBook.id);
-        if (cancelled) return;
-        setBook(selectedBook);
-        setPlanDays(days);
-        setDayState(stateFromEvents(events, nextSession.user.id, selectedBook.id));
-        setPhase("app");
+        await loadBookAndEvents();
       } catch (err) {
         if (cancelled) return;
         setLoadError(err instanceof Error ? err.message : "불러오는 중 문제가 발생했습니다.");
@@ -91,39 +86,19 @@ export default function Home() {
     };
   }, []);
 
-  async function proceedToBookOrApp(userId: string) {
-    try {
-      const selection = await fetchBookSelection(userId);
-      const selectedBook = selection ? findBook(selection.book_id) : undefined;
-      if (!selectedBook) {
-        setPhase("selectBook");
-        return;
-      }
-      const days = buildPlanDays(selectedBook);
-      const events = await fetchUserEvents(userId, selectedBook.id);
-      setBook(selectedBook);
-      setPlanDays(days);
-      setDayState(stateFromEvents(events, userId, selectedBook.id));
-      setPhase("app");
-    } catch (err) {
-      setLoadError(err instanceof Error ? err.message : "불러오는 중 문제가 발생했습니다.");
-      setPhase("error");
-    }
-  }
-
   async function handleSelectBook(bookId: string) {
     if (!session || bookSaving) return;
     setBookSaving(true);
     setBookError(null);
     try {
-      await saveBookSelection(session.user.id, bookId);
+      await saveBookSelection(bookId);
       const selectedBook = findBook(bookId);
       if (!selectedBook) throw new Error("알 수 없는 책입니다.");
       const days = buildPlanDays(selectedBook);
-      const events = await fetchUserEvents(session.user.id, selectedBook.id);
+      const state = await fetchUserEvents(selectedBook.id);
       setBook(selectedBook);
       setPlanDays(days);
-      setDayState(stateFromEvents(events, session.user.id, selectedBook.id));
+      setDayState(state);
       setTab("plan");
       setPhase("app");
     } catch (err) {
@@ -139,7 +114,7 @@ export default function Home() {
     const next = current === "check" ? "uncheck" : "check";
     setPendingDay(day);
     try {
-      await insertEvent(session.user.id, book.id, day, next);
+      await insertEvent(book.id, day, next);
       setDayState((prev) => {
         const copy = new Map(prev);
         copy.set(day, next);
@@ -182,10 +157,12 @@ export default function Home() {
   if (phase === "nickname" && session) {
     return (
       <NicknameScreen
-        userId={session.user.id}
         onDone={(created) => {
           setProfile(created);
-          proceedToBookOrApp(session.user.id);
+          loadBookAndEvents().catch((err) => {
+            setLoadError(err instanceof Error ? err.message : "불러오는 중 문제가 발생했습니다.");
+            setPhase("error");
+          });
         }}
       />
     );
