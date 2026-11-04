@@ -71,9 +71,17 @@ export async function insertEvent(bookId: string, day: number, kind: EventKind):
 export interface ChurchRow {
   userId: string;
   nickname: string;
-  books: { bookName: string; completed: number; total: number }[];
+  books: {
+    bookName: string;
+    completed: number;
+    total: number;
+    chaptersDone: number;
+    totalChapters: number;
+  }[];
   totalCompleted: number;
   totalDays: number;
+  totalChaptersDone: number;
+  totalChapters: number;
 }
 
 export async function fetchChurchOverview(): Promise<{

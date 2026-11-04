@@ -34,6 +34,29 @@ export function buildPlanDays(book: Book): PlanDay[] {
   return days;
 }
 
+/** Chapters read per plan-day (2, tapering to 1 on the last day), indexed by day - 1. */
+export function buildPlanChapterCounts(book: Book): number[] {
+  const counts: number[] = [];
+  let chapter = 1;
+  while (chapter <= book.chapters) {
+    const remaining = book.chapters - chapter + 1;
+    const take = remaining === 1 ? 1 : 2;
+    counts.push(take);
+    chapter += take;
+  }
+  return counts;
+}
+
+/** Total chapters read so far, given which plan-days are checked. */
+export function chaptersRead(book: Book, stateByDay: Map<number, "check" | "uncheck">): number {
+  const counts = buildPlanChapterCounts(book);
+  let total = 0;
+  stateByDay.forEach((kind, day) => {
+    if (kind === "check") total += counts[day - 1] ?? 0;
+  });
+  return total;
+}
+
 /** Longest run of consecutive days (1..totalDays) where the last known state is "check". */
 export function longestStreak(
   stateByDay: Map<number, "check" | "uncheck">,

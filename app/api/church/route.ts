@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/supabaseServer";
 import { findBook } from "@/lib/books";
-import { buildPlanDays } from "@/lib/plan";
+import { buildPlanDays, chaptersRead } from "@/lib/plan";
 import type { EventKind } from "@/lib/types";
 
 export async function GET(request: Request) {
@@ -41,13 +41,24 @@ export async function GET(request: Request) {
         const book = findBook(bookId);
         if (!book) return [];
         const total = buildPlanDays(book).length;
-        const state = stateByKey.get(`${profile.id}|${bookId}`);
-        const completed = state ? [...state.values()].filter((k) => k === "check").length : 0;
-        return [{ bookName: book.nameKo, completed, total }];
+        const state = stateByKey.get(`${profile.id}|${bookId}`) ?? new Map();
+        const completed = [...state.values()].filter((k) => k === "check").length;
+        const chaptersDone = chaptersRead(book, state);
+        return [{ bookName: book.nameKo, completed, total, chaptersDone, totalChapters: book.chapters }];
       });
       const totalDays = books.reduce((sum, b) => sum + b.total, 0);
       const totalCompleted = books.reduce((sum, b) => sum + b.completed, 0);
-      return { userId: profile.id, nickname: profile.nickname, books, totalCompleted, totalDays };
+      const totalChaptersDone = books.reduce((sum, b) => sum + b.chaptersDone, 0);
+      const totalChapters = books.reduce((sum, b) => sum + b.totalChapters, 0);
+      return {
+        userId: profile.id,
+        nickname: profile.nickname,
+        books,
+        totalCompleted,
+        totalDays,
+        totalChaptersDone,
+        totalChapters,
+      };
     })
     .sort((a, b) => {
       const ap = a.totalDays > 0 ? a.totalCompleted / a.totalDays : -1;
