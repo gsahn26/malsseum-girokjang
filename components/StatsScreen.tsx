@@ -1,6 +1,6 @@
 "use client";
 
-import { currentWeek, formatDate, longestStreak, planDateRange, weekCompletedCount } from "@/lib/plan";
+import { currentWeek, formatDate, longestStreak, planDateRange, planPaceDiff, weekCompletedCount } from "@/lib/plan";
 import type { BookEntry } from "@/app/page";
 
 function StatCard({ label, value, unit }: { label: string; value: number | string; unit?: string }) {
@@ -25,16 +25,26 @@ function BookStats({ entry }: { entry: BookEntry }) {
   const streak = longestStreak(dayState, totalDays);
   const remaining = totalDays - doneCount;
   const { start, end } = planDateRange(selectedAt, totalDays);
+  const paceDiff = planPaceDiff(selectedAt, totalDays, doneCount);
 
   return (
     <div className="mb-6">
-      <div className="mb-3 flex items-baseline justify-between">
+      <div className="mb-1 flex items-baseline justify-between">
         <h2 className="text-lg font-semibold">{book.nameKo}</h2>
         <span className="text-xs text-muted">
           {formatDate(start)} ~ {formatDate(end)}
           {remaining > 0 && " (목표)"}
         </span>
       </div>
+      <p
+        className={`mb-3 text-xs font-medium ${
+          paceDiff > 0 ? "text-accent" : paceDiff < 0 ? "text-red-600" : "text-muted"
+        }`}
+      >
+        {paceDiff > 0 && `목표보다 ${paceDiff}일 일찍 ${remaining === 0 ? "완독했어요" : "가고 있어요"}`}
+        {paceDiff < 0 && `목표보다 ${-paceDiff}일 초과됐어요`}
+        {paceDiff === 0 && "계획대로 진행 중이에요"}
+      </p>
       <div className="grid grid-cols-2 gap-3">
         <StatCard label="읽은 날" value={doneCount} unit="일" />
         <StatCard label="진행률" value={progress} unit="%" />

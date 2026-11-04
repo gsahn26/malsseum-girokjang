@@ -83,6 +83,32 @@ export function planDateRange(selectedAt: string, totalDays: number): { start: D
   return { start, end };
 }
 
+/**
+ * Which plan-day a person should be on today if they read one plan-day
+ * (2 chapters, tapering to 1 on the last day) every calendar day since
+ * selectedAt — the start date itself counts as day 1. Clamped to [0, totalDays].
+ */
+export function expectedDayByNow(selectedAt: string, totalDays: number, now: Date = new Date()): number {
+  const start = new Date(selectedAt);
+  const startMidnight = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const nowMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const elapsedDays = Math.floor((nowMidnight.getTime() - startMidnight.getTime()) / 86_400_000) + 1;
+  return Math.min(Math.max(elapsedDays, 0), totalDays);
+}
+
+/**
+ * How many plan-days ahead (positive) or behind (negative) schedule someone
+ * is, compared to reading one plan-day per calendar day since selectedAt.
+ */
+export function planPaceDiff(
+  selectedAt: string,
+  totalDays: number,
+  doneCount: number,
+  now: Date = new Date()
+): number {
+  return doneCount - expectedDayByNow(selectedAt, totalDays, now);
+}
+
 /** Count of checked days within a given 1-indexed week (7 days each). */
 export function weekCompletedCount(
   stateByDay: Map<number, "check" | "uncheck">,
