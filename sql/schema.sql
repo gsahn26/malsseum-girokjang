@@ -4,8 +4,8 @@
 -- with church_ so they don't collide with the other projects that share
 -- this Supabase instance.
 --
--- Requires: Authentication -> Providers -> Kakao enabled (with a Kakao
--- developer app registered; see README.md).
+-- Requires: Authentication -> Providers -> Google enabled (with a Google
+-- Cloud OAuth client registered; see README.md).
 
 create table if not exists church_profiles (
   id uuid primary key references auth.users(id) on delete cascade,
