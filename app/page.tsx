@@ -102,6 +102,12 @@ export default function Home() {
         await loadBooksAndEvents();
       } catch (err) {
         if (cancelled) return;
+        if (err instanceof Error && err.message === "unauthorized") {
+          // 세션이 서버에서 이미 무효화된 상태 — 에러 화면 대신 로그인으로.
+          await supabase.auth.signOut();
+          setPhase("login");
+          return;
+        }
         setLoadError(err instanceof Error ? err.message : "불러오는 중 문제가 발생했습니다.");
         setPhase("error");
       }
