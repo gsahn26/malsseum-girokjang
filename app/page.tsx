@@ -13,10 +13,11 @@ import ChurchScreen from "@/components/ChurchScreen";
 import ShareScreen from "@/components/ShareScreen";
 import BottomNav, { type Tab } from "@/components/BottomNav";
 
-type Phase = "loading" | "login" | "nickname" | "app";
+type Phase = "loading" | "login" | "nickname" | "app" | "error";
 
 export default function Home() {
   const [phase, setPhase] = useState<Phase>("loading");
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [dayState, setDayState] = useState<DayState>(new Map());
@@ -32,21 +33,28 @@ export default function Home() {
         setPhase("login");
         return;
       }
-      const existingProfile = await fetchProfile(nextSession.user.id);
-      if (cancelled) return;
-      if (!existingProfile) {
-        setPhase("nickname");
-        return;
+      try {
+        const existingProfile = await fetchProfile(nextSession.user.id);
+        if (cancelled) return;
+        if (!existingProfile) {
+          setPhase("nickname");
+          return;
+        }
+        setProfile(existingProfile);
+        const { data: events, error } = await supabase
+          .from("church_reading_events")
+          .select("*")
+          .eq("user_id", nextSession.user.id)
+          .order("created_at", { ascending: true });
+        if (error) throw error;
+        if (cancelled) return;
+        setDayState(stateFromEvents(events ?? [], nextSession.user.id));
+        setPhase("app");
+      } catch (err) {
+        if (cancelled) return;
+        setLoadError(err instanceof Error ? err.message : "불러오는 중 문제가 발생했습니다.");
+        setPhase("error");
       }
-      setProfile(existingProfile);
-      const { data: events } = await supabase
-        .from("church_reading_events")
-        .select("*")
-        .eq("user_id", nextSession.user.id)
-        .order("created_at", { ascending: true });
-      if (cancelled) return;
-      setDayState(stateFromEvents(events ?? [], nextSession.user.id));
-      setPhase("app");
     }
 
     supabase.auth.getSession().then(({ data }) => {
@@ -92,6 +100,21 @@ export default function Home() {
 
   if (phase === "login") {
     return <LoginScreen />;
+  }
+
+  if (phase === "error") {
+    return (
+      <div className="flex min-h-dvh flex-col items-center justify-center gap-4 px-8 text-center">
+        <p className="text-sm text-red-600">{loadError ?? "불러오는 중 문제가 발생했습니다."}</p>
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="rounded-xl bg-accent px-6 py-3 text-sm font-medium text-white"
+        >
+          다시 시도
+        </button>
+      </div>
+    );
   }
 
   if (phase === "nickname" && session) {
