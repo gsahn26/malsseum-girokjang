@@ -1,69 +1,129 @@
-import Image from "next/image";
+"use client";
+
+import { useEffect, useState } from "react";
+import type { Session } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabaseClient";
+import { fetchProfile, insertEvent, stateFromEvents } from "@/lib/data";
+import type { DayState, Profile } from "@/lib/types";
+import LoginScreen from "@/components/LoginScreen";
+import NicknameScreen from "@/components/NicknameScreen";
+import PlanScreen from "@/components/PlanScreen";
+import StatsScreen from "@/components/StatsScreen";
+import ChurchScreen from "@/components/ChurchScreen";
+import ShareScreen from "@/components/ShareScreen";
+import BottomNav, { type Tab } from "@/components/BottomNav";
+
+type Phase = "loading" | "login" | "nickname" | "app";
 
 export default function Home() {
-  return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
-  );
+  const [phase, setPhase] = useState<Phase>("loading");
+  const [session, setSession] = useState<Session | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [dayState, setDayState] = useState<DayState>(new Map());
+  const [tab, setTab] = useState<Tab>("plan");
+  const [pendingDay, setPendingDay] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function handleSession(nextSession: Session | null) {
+      setSession(nextSession);
+      if (!nextSession) {
+        setPhase("login");
+        return;
+      }
+      const existingProfile = await fetchProfile(nextSession.user.id);
+      if (cancelled) return;
+      if (!existingProfile) {
+        setPhase("nickname");
+        return;
+      }
+      setProfile(existingProfile);
+      const { data: events } = await supabase
+        .from("church_reading_events")
+        .select("*")
+        .eq("user_id", nextSession.user.id)
+        .order("created_at", { ascending: true });
+      if (cancelled) return;
+      setDayState(stateFromEvents(events ?? [], nextSession.user.id));
+      setPhase("app");
+    }
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!cancelled) handleSession(data.session);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      handleSession(nextSession);
+    });
+
+    return () => {
+      cancelled = true;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
+  async function handleToggle(day: number) {
+    if (!session || pendingDay !== null) return;
+    const current = dayState.get(day) === "check" ? "check" : "uncheck";
+    const next = current === "check" ? "uncheck" : "check";
+    setPendingDay(day);
+    try {
+      await insertEvent(session.user.id, day, next);
+      setDayState((prev) => {
+        const copy = new Map(prev);
+        copy.set(day, next);
+        return copy;
+      });
+    } catch {
+      // leave state unchanged — the next sync will reflect the true server state
+    } finally {
+      setPendingDay(null);
+    }
+  }
+
+  if (phase === "loading") {
+    return (
+      <div className="flex min-h-dvh items-center justify-center text-sm text-muted">
+        불러오는 중...
+      </div>
+    );
+  }
+
+  if (phase === "login") {
+    return <LoginScreen />;
+  }
+
+  if (phase === "nickname" && session) {
+    return (
+      <NicknameScreen
+        userId={session.user.id}
+        onDone={(created) => {
+          setProfile(created);
+          setPhase("app");
+        }}
+      />
+    );
+  }
+
+  if (phase === "app" && session && profile) {
+    return (
+      <div className="flex min-h-dvh flex-col">
+        {tab === "plan" && (
+          <PlanScreen
+            nickname={profile.nickname}
+            dayState={dayState}
+            pendingDay={pendingDay}
+            onToggle={handleToggle}
+          />
+        )}
+        {tab === "stats" && <StatsScreen nickname={profile.nickname} dayState={dayState} />}
+        {tab === "church" && <ChurchScreen myUserId={session.user.id} />}
+        {tab === "share" && <ShareScreen nickname={profile.nickname} dayState={dayState} />}
+        <BottomNav active={tab} onChange={setTab} />
+      </div>
+    );
+  }
+
+  return null;
 }
