@@ -6,7 +6,6 @@ import { fetchChurchOverview, type ChurchRow } from "@/lib/data";
 export default function ChurchScreen({ myUserId }: { myUserId: string }) {
   const [rows, setRows] = useState<ChurchRow[] | null>(null);
   const [participantCount, setParticipantCount] = useState(0);
-  const [finisherCount, setFinisherCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -17,7 +16,6 @@ export default function ChurchScreen({ myUserId }: { myUserId: string }) {
         if (cancelled) return;
         setRows(overview.rows);
         setParticipantCount(overview.participantCount);
-        setFinisherCount(overview.finisherCount);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "현황을 불러오지 못했습니다.");
       }
@@ -42,6 +40,16 @@ export default function ChurchScreen({ myUserId }: { myUserId: string }) {
     );
   }
 
+  const topReader = rows.reduce<{ nickname: string; finishedCount: number } | null>((best, row) => {
+    const finishedCount = row.books.filter((b) => b.total > 0 && b.completed === b.total).length;
+    if (finishedCount === 0) return best;
+    if (!best || finishedCount > best.finishedCount) return { nickname: row.nickname, finishedCount };
+    if (finishedCount === best.finishedCount && row.nickname.localeCompare(best.nickname) < 0) {
+      return { nickname: row.nickname, finishedCount };
+    }
+    return best;
+  }, null);
+
   return (
     <div className="flex flex-1 flex-col overflow-y-auto px-5 pb-6 pt-8">
       <h1 className="mb-6 text-2xl font-semibold">목양교회 현황</h1>
@@ -52,8 +60,15 @@ export default function ChurchScreen({ myUserId }: { myUserId: string }) {
           <p className="mt-1 text-2xl font-semibold">{participantCount}명</p>
         </div>
         <div className="rounded-xl border border-border bg-card px-4 py-4">
-          <p className="text-xs text-muted">완주자</p>
-          <p className="mt-1 text-2xl font-semibold">{finisherCount}명</p>
+          <p className="text-xs text-muted">최다 완독</p>
+          {topReader ? (
+            <p className="mt-1 text-2xl font-semibold">
+              {topReader.nickname}
+              <span className="ml-1 text-sm font-normal text-muted">{topReader.finishedCount}권</span>
+            </p>
+          ) : (
+            <p className="mt-1 text-2xl font-semibold text-muted">아직 없음</p>
+          )}
         </div>
       </div>
 
