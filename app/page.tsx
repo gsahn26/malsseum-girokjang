@@ -29,6 +29,7 @@ export interface BookEntry {
   book: Book;
   planDays: PlanDay[];
   dayState: DayState;
+  selectedAt: string;
 }
 
 export default function Home() {
@@ -58,7 +59,7 @@ export default function Home() {
         const book = findBook(selection.book_id) as Book;
         const planDays = buildPlanDays(book);
         const dayState = await fetchUserEvents(book.id);
-        return { book, planDays, dayState };
+        return { book, planDays, dayState, selectedAt: selection.selected_at };
       })
     );
     setBooks(entries);

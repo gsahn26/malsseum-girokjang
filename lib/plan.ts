@@ -66,6 +66,23 @@ export function currentWeek(
   return lastWeek;
 }
 
+/** "YYYY.MM.DD" for a date or ISO timestamp, in the local timezone. */
+export function formatDate(date: Date | string): string {
+  const d = typeof date === "string" ? new Date(date) : date;
+  return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`;
+}
+
+/**
+ * The plan's start date (when the book was selected) and its target end date,
+ * assuming one plan-day is read per calendar day.
+ */
+export function planDateRange(selectedAt: string, totalDays: number): { start: Date; end: Date } {
+  const start = new Date(selectedAt);
+  const end = new Date(start);
+  end.setDate(end.getDate() + Math.max(totalDays - 1, 0));
+  return { start, end };
+}
+
 /** Count of checked days within a given 1-indexed week (7 days each). */
 export function weekCompletedCount(
   stateByDay: Map<number, "check" | "uncheck">,
