@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 import {
@@ -46,6 +46,14 @@ export default function Home() {
   const [bookSaving, setBookSaving] = useState(false);
   const [bookError, setBookError] = useState<string | null>(null);
   const [addingBook, setAddingBook] = useState(false);
+  const [kickedOut, setKickedOut] = useState(false);
+  const claimedTokenRef = useRef<string | null>(null);
+
+  function claimSession(userId: string) {
+    const token = crypto.randomUUID();
+    claimedTokenRef.current = token;
+    supabase.from("church_profiles").update({ session_token: token }).eq("id", userId).then(() => {});
+  }
 
   async function loadBooksAndEvents() {
     const selections = await fetchBookSelections();
@@ -72,12 +80,13 @@ export default function Home() {
   useEffect(() => {
     let cancelled = false;
 
-    async function handleSession(nextSession: Session | null) {
+    async function handleSession(nextSession: Session | null, event?: string) {
       setSession(nextSession);
       if (!nextSession) {
         setPhase("login");
         return;
       }
+      setKickedOut(false);
       try {
         const existingProfile = await fetchProfile();
         if (cancelled) return;
@@ -86,6 +95,9 @@ export default function Home() {
           return;
         }
         setProfile(existingProfile);
+        if (event === "SIGNED_IN" || event === "INITIAL_SESSION") {
+          claimSession(nextSession.user.id);
+        }
         if (cancelled) return;
         await loadBooksAndEvents();
       } catch (err) {
@@ -96,11 +108,11 @@ export default function Home() {
     }
 
     supabase.auth.getSession().then(({ data }) => {
-      if (!cancelled) handleSession(data.session);
+      if (!cancelled) handleSession(data.session, "INITIAL_SESSION");
     });
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      handleSession(nextSession);
+    const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      handleSession(nextSession, event);
     });
 
     return () => {
@@ -128,6 +140,36 @@ export default function Home() {
     return () => {
       clearTimeout(timer);
       activityEvents.forEach((event) => window.removeEventListener(event, resetTimer));
+    };
+  }, [session]);
+
+  // 다른 기기/탭에서 같은 계정으로 로그인하면 session_token이 덮어써지고,
+  // 이 쪽은 그 변경을 realtime으로 감지해서 자동 로그아웃된다.
+  useEffect(() => {
+    if (!session) return;
+
+    const channel = supabase
+      .channel(`profile-session-${session.user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "church_profiles",
+          filter: `id=eq.${session.user.id}`,
+        },
+        (payload) => {
+          const newToken = (payload.new as { session_token: string | null }).session_token;
+          if (claimedTokenRef.current && newToken && newToken !== claimedTokenRef.current) {
+            setKickedOut(true);
+            supabase.auth.signOut();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
     };
   }, [session]);
 
@@ -195,7 +237,11 @@ export default function Home() {
   }
 
   if (phase === "login") {
-    return <LoginScreen />;
+    return (
+      <LoginScreen
+        notice={kickedOut ? "다른 기기에서 로그인되어 자동 로그아웃되었습니다." : undefined}
+      />
+    );
   }
 
   if (phase === "error") {
@@ -218,6 +264,7 @@ export default function Home() {
       <NicknameScreen
         onDone={(created) => {
           setProfile(created);
+          if (session) claimSession(session.user.id);
           loadBooksAndEvents().catch((err) => {
             setLoadError(err instanceof Error ? err.message : "불러오는 중 문제가 발생했습니다.");
             setPhase("error");
