@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
-export default function LoginScreen({ notice }: { notice?: string }) {
+export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,12 +31,6 @@ export default function LoginScreen({ notice }: { notice?: string }) {
           목양교회 성도와 함께 읽은 날을 기록해 보세요.
         </p>
       </div>
-
-      {notice && (
-        <p className="max-w-xs rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted">
-          {notice}
-        </p>
-      )}
 
       <button
         type="button"
