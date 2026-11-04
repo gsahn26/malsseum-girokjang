@@ -17,7 +17,12 @@ export async function GET(request: Request) {
   if (selectionsRes.error) return NextResponse.json({ error: selectionsRes.error.message }, { status: 500 });
   if (eventsRes.error) return NextResponse.json({ error: eventsRes.error.message }, { status: 500 });
 
-  const bookByUser = new Map(selectionsRes.data.map((s) => [s.user_id, s.book_id]));
+  const bookIdsByUser = new Map<string, string[]>();
+  for (const s of selectionsRes.data) {
+    const list = bookIdsByUser.get(s.user_id) ?? [];
+    list.push(s.book_id);
+    bookIdsByUser.set(s.user_id, list);
+  }
   const stateByKey = new Map<string, Map<number, EventKind>>();
   for (const e of eventsRes.data) {
     const key = `${e.user_id}|${e.book_id}`;
@@ -31,20 +36,26 @@ export async function GET(request: Request) {
 
   const rows = profilesRes.data
     .map((profile) => {
-      const bookId = bookByUser.get(profile.id);
-      const book = bookId ? findBook(bookId) : undefined;
-      const total = book ? buildPlanDays(book).length : 0;
-      const state = bookId ? stateByKey.get(`${profile.id}|${bookId}`) : undefined;
-      const completed = state ? [...state.values()].filter((k) => k === "check").length : 0;
-      return { userId: profile.id, nickname: profile.nickname, bookName: book?.nameKo ?? null, completed, total };
+      const bookIds = bookIdsByUser.get(profile.id) ?? [];
+      const books = bookIds.flatMap((bookId) => {
+        const book = findBook(bookId);
+        if (!book) return [];
+        const total = buildPlanDays(book).length;
+        const state = stateByKey.get(`${profile.id}|${bookId}`);
+        const completed = state ? [...state.values()].filter((k) => k === "check").length : 0;
+        return [{ bookName: book.nameKo, completed, total }];
+      });
+      const totalDays = books.reduce((sum, b) => sum + b.total, 0);
+      const totalCompleted = books.reduce((sum, b) => sum + b.completed, 0);
+      return { userId: profile.id, nickname: profile.nickname, books, totalCompleted, totalDays };
     })
     .sort((a, b) => {
-      const ap = a.total > 0 ? a.completed / a.total : -1;
-      const bp = b.total > 0 ? b.completed / b.total : -1;
+      const ap = a.totalDays > 0 ? a.totalCompleted / a.totalDays : -1;
+      const bp = b.totalDays > 0 ? b.totalCompleted / b.totalDays : -1;
       return bp - ap || a.nickname.localeCompare(b.nickname);
     });
 
-  const finishers = rows.filter((r) => r.total > 0 && r.completed === r.total).length;
+  const finishers = rows.filter((r) => r.books.some((b) => b.total > 0 && b.completed === b.total)).length;
 
   return NextResponse.json({ rows, participantCount: rows.length, finisherCount: finishers });
 }

@@ -58,8 +58,9 @@ export default function ChurchScreen({ myUserId }: { myUserId: string }) {
       </div>
 
       <div className="flex flex-col gap-2">
-        {rows.map(({ userId, nickname, bookName, completed, total }) => {
+        {rows.map(({ userId, nickname, books, totalCompleted, totalDays }) => {
           const isMe = userId === myUserId;
+          const hasFinished = books.some((b) => b.total > 0 && b.completed === b.total);
           return (
             <div
               key={userId}
@@ -70,11 +71,17 @@ export default function ChurchScreen({ myUserId }: { myUserId: string }) {
               <span className={`text-sm ${isMe ? "font-semibold" : ""}`}>
                 {nickname}
                 {isMe && <span className="ml-1.5 text-xs text-accent">(나)</span>}
-                {total > 0 && completed === total && <span className="ml-1.5">🏆</span>}
-                {bookName && <span className="block text-xs text-muted">{bookName}</span>}
+                {hasFinished && <span className="ml-1.5">🏆</span>}
+                {books.length > 0 ? (
+                  <span className="block text-xs text-muted">
+                    {books.map((b) => `${b.bookName} ${b.completed}/${b.total}일`).join(" · ")}
+                  </span>
+                ) : (
+                  <span className="block text-xs text-muted">책 미선택</span>
+                )}
               </span>
               <span className="text-sm text-muted">
-                {total > 0 ? `${completed}/${total}일` : "책 미선택"}
+                {totalDays > 0 ? `총 ${totalCompleted}/${totalDays}일` : ""}
               </span>
             </div>
           );
