@@ -1,24 +1,29 @@
 "use client";
 
 import { useState } from "react";
-import { PLAN_DAYS } from "@/lib/plan";
+import type { PlanDay } from "@/lib/plan";
 import type { DayState } from "@/lib/types";
 
 export default function ShareScreen({
   nickname,
+  bookName,
+  planDays,
   dayState,
 }: {
   nickname: string;
+  bookName: string;
+  planDays: PlanDay[];
   dayState: DayState;
 }) {
   const [copied, setCopied] = useState(false);
-  const doneCount = PLAN_DAYS.filter((d) => dayState.get(d.day) === "check").length;
-  const progress = Math.round((doneCount / PLAN_DAYS.length) * 100);
+  const totalDays = planDays.length;
+  const doneCount = planDays.filter((d) => dayState.get(d.day) === "check").length;
+  const progress = totalDays > 0 ? Math.round((doneCount / totalDays) * 100) : 0;
 
   const text =
-    doneCount === PLAN_DAYS.length
-      ? `📖 ${nickname}, 말씀기록장에서 창세기 28일 통독을 완주했어요! 🎉\n함께 읽어요 ✨`
-      : `📖 ${nickname}, 말씀기록장에서 창세기를 ${doneCount}/28일 읽었어요 (${progress}%)\n함께 창세기를 읽어요 ✨`;
+    doneCount === totalDays && totalDays > 0
+      ? `📖 ${nickname}, 말씀기록장에서 ${bookName} 통독을 완주했어요! 🎉\n함께 읽어요 ✨`
+      : `📖 ${nickname}, 말씀기록장에서 ${bookName}를 ${doneCount}/${totalDays}일 읽었어요 (${progress}%)\n함께 읽어요 ✨`;
 
   async function handleShare() {
     if (navigator.share) {
@@ -47,9 +52,9 @@ export default function ShareScreen({
       <h1 className="mb-6 text-2xl font-semibold">진행률 공유</h1>
 
       <div className="rounded-xl border border-border bg-card px-5 py-6 text-center">
-        <p className="text-sm text-muted">나의 진행률</p>
+        <p className="text-sm text-muted">나의 진행률 ({bookName})</p>
         <p className="mt-1 text-3xl font-semibold text-accent">{progress}%</p>
-        <p className="mt-1 text-sm text-muted">{doneCount}/28일 읽음</p>
+        <p className="mt-1 text-sm text-muted">{doneCount}/{totalDays}일 읽음</p>
       </div>
 
       <div className="mt-4 whitespace-pre-line rounded-xl border border-border bg-accent-soft px-4 py-4 text-sm leading-6">

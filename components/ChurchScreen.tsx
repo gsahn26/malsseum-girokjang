@@ -1,12 +1,22 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { completedDayCount, fetchAllEvents, fetchAllProfiles, stateByUser } from "@/lib/data";
+import { findBook } from "@/lib/books";
+import {
+  completedDayCount,
+  fetchAllBookSelections,
+  fetchAllEvents,
+  fetchAllProfiles,
+  stateByUserAndBook,
+} from "@/lib/data";
+import { buildPlanDays } from "@/lib/plan";
 import type { Profile } from "@/lib/types";
 
 interface Row {
   profile: Profile;
+  bookName: string | null;
   completed: number;
+  total: number;
 }
 
 export default function ChurchScreen({ myUserId }: { myUserId: string }) {
@@ -17,14 +27,31 @@ export default function ChurchScreen({ myUserId }: { myUserId: string }) {
     let cancelled = false;
     async function load() {
       try {
-        const [profiles, events] = await Promise.all([fetchAllProfiles(), fetchAllEvents()]);
-        const states = stateByUser(events);
-        const built = profiles
-          .map((profile) => ({
-            profile,
-            completed: completedDayCount(states.get(profile.id) ?? new Map()),
-          }))
-          .sort((a, b) => b.completed - a.completed || a.profile.nickname.localeCompare(b.profile.nickname));
+        const [profiles, selections, events] = await Promise.all([
+          fetchAllProfiles(),
+          fetchAllBookSelections(),
+          fetchAllEvents(),
+        ]);
+        const selectionByUser = new Map(selections.map((s) => [s.user_id, s.book_id]));
+        const states = stateByUserAndBook(events);
+        const built: Row[] = profiles
+          .map((profile) => {
+            const bookId = selectionByUser.get(profile.id);
+            const book = bookId ? findBook(bookId) : undefined;
+            const total = book ? buildPlanDays(book).length : 0;
+            const state = bookId ? states.get(`${profile.id}|${bookId}`) ?? new Map() : new Map();
+            return {
+              profile,
+              bookName: book?.nameKo ?? null,
+              completed: completedDayCount(state),
+              total,
+            };
+          })
+          .sort((a, b) => {
+            const ap = a.total > 0 ? a.completed / a.total : -1;
+            const bp = b.total > 0 ? b.completed / b.total : -1;
+            return bp - ap || a.profile.nickname.localeCompare(b.profile.nickname);
+          });
         if (!cancelled) setRows(built);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "현황을 불러오지 못했습니다.");
@@ -50,7 +77,7 @@ export default function ChurchScreen({ myUserId }: { myUserId: string }) {
     );
   }
 
-  const finishers = rows.filter((r) => r.completed === 28).length;
+  const finishers = rows.filter((r) => r.total > 0 && r.completed === r.total).length;
 
   return (
     <div className="flex flex-1 flex-col overflow-y-auto px-5 pb-6 pt-8">
@@ -68,7 +95,7 @@ export default function ChurchScreen({ myUserId }: { myUserId: string }) {
       </div>
 
       <div className="flex flex-col gap-2">
-        {rows.map(({ profile, completed }) => {
+        {rows.map(({ profile, bookName, completed, total }) => {
           const isMe = profile.id === myUserId;
           return (
             <div
@@ -80,9 +107,12 @@ export default function ChurchScreen({ myUserId }: { myUserId: string }) {
               <span className={`text-sm ${isMe ? "font-semibold" : ""}`}>
                 {profile.nickname}
                 {isMe && <span className="ml-1.5 text-xs text-accent">(나)</span>}
-                {completed === 28 && <span className="ml-1.5">🏆</span>}
+                {total > 0 && completed === total && <span className="ml-1.5">🏆</span>}
+                {bookName && <span className="block text-xs text-muted">{bookName}</span>}
               </span>
-              <span className="text-sm text-muted">{completed}/28일</span>
+              <span className="text-sm text-muted">
+                {total > 0 ? `${completed}/${total}일` : "책 미선택"}
+              </span>
             </div>
           );
         })}

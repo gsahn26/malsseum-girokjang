@@ -2,8 +2,8 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "말씀기록장 — 28일 창세기 통독",
-  description: "목양교회 성도와 함께 28일 동안 창세기를 함께 읽는 성경통독 기록 앱입니다.",
+  title: "말씀기록장 — 성경통독 기록",
+  description: "목양교회 성도와 함께 성경 66권 중 원하는 책을 골라 통독 기록을 남기는 앱입니다.",
 };
 
 export const viewport: Viewport = {

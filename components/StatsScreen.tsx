@@ -1,6 +1,6 @@
 "use client";
 
-import { PLAN_DAYS, currentWeek, longestStreak, weekCompletedCount } from "@/lib/plan";
+import { currentWeek, longestStreak, weekCompletedCount, type PlanDay } from "@/lib/plan";
 import type { DayState } from "@/lib/types";
 
 function StatCard({ label, value, unit }: { label: string; value: number | string; unit?: string }) {
@@ -17,21 +17,26 @@ function StatCard({ label, value, unit }: { label: string; value: number | strin
 
 export default function StatsScreen({
   nickname,
+  bookName,
+  planDays,
   dayState,
 }: {
   nickname: string;
+  bookName: string;
+  planDays: PlanDay[];
   dayState: DayState;
 }) {
-  const doneCount = PLAN_DAYS.filter((d) => dayState.get(d.day) === "check").length;
-  const progress = Math.round((doneCount / PLAN_DAYS.length) * 100);
-  const week = currentWeek(dayState);
-  const thisWeek = weekCompletedCount(dayState, week);
-  const streak = longestStreak(dayState);
-  const remaining = PLAN_DAYS.length - doneCount;
+  const totalDays = planDays.length;
+  const doneCount = planDays.filter((d) => dayState.get(d.day) === "check").length;
+  const progress = totalDays > 0 ? Math.round((doneCount / totalDays) * 100) : 0;
+  const week = currentWeek(dayState, totalDays);
+  const thisWeek = weekCompletedCount(dayState, week, totalDays);
+  const streak = longestStreak(dayState, totalDays);
+  const remaining = totalDays - doneCount;
 
   return (
     <div className="flex flex-1 flex-col overflow-y-auto px-5 pb-6 pt-8">
-      <p className="mb-1 text-sm text-muted">{nickname}님의 기록</p>
+      <p className="mb-1 text-sm text-muted">{nickname}님의 {bookName} 기록</p>
       <h1 className="mb-6 text-2xl font-semibold">내 통계</h1>
 
       <div className="grid grid-cols-2 gap-3">

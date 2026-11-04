@@ -26,7 +26,7 @@ export default function LoginScreen() {
         <span className="text-sm tracking-[0.3em] text-muted">목양교회</span>
         <h1 className="text-3xl font-semibold">말씀기록장</h1>
         <p className="max-w-xs text-sm leading-6 text-muted">
-          하루 1~2장씩, 28일이면 창세기를 끝까지 읽습니다.
+          구약·신약 66권 중 원하는 책을 골라 하루 1~2장씩 읽습니다.
           <br />
           목양교회 성도와 함께 읽은 날을 기록해 보세요.
         </p>
