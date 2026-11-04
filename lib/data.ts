@@ -25,6 +25,14 @@ async function apiPost<T>(path: string, payload: unknown): Promise<T> {
   return body as T;
 }
 
+async function apiDelete<T>(path: string, params: Record<string, string>): Promise<T> {
+  const query = new URLSearchParams(params).toString();
+  const res = await fetch(`${path}?${query}`, { method: "DELETE", headers: await authHeaders() });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error ?? `요청에 실패했습니다 (${res.status})`);
+  return body as T;
+}
+
 export async function fetchProfile(): Promise<Profile | null> {
   const { profile } = await apiGet<{ profile: Profile | null }>("/api/profile");
   return profile;
@@ -35,14 +43,18 @@ export async function createProfile(nickname: string): Promise<Profile> {
   return profile;
 }
 
-export async function fetchBookSelection(): Promise<BookSelection | null> {
-  const { selection } = await apiGet<{ selection: BookSelection | null }>("/api/book-selection");
-  return selection;
+export async function fetchBookSelections(): Promise<BookSelection[]> {
+  const { selections } = await apiGet<{ selections: BookSelection[] }>("/api/book-selection");
+  return selections;
 }
 
-export async function saveBookSelection(bookId: string): Promise<BookSelection> {
-  const { selection } = await apiPost<{ selection: BookSelection }>("/api/book-selection", { bookId });
-  return selection;
+export async function addBookSelection(bookId: string): Promise<BookSelection[]> {
+  const { selections } = await apiPost<{ selections: BookSelection[] }>("/api/book-selection", { bookId });
+  return selections;
+}
+
+export async function removeBookSelection(bookId: string): Promise<void> {
+  await apiDelete("/api/book-selection", { bookId });
 }
 
 export async function fetchUserEvents(bookId: string): Promise<DayState> {

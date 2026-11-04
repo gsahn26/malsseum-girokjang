@@ -10,10 +10,10 @@ export async function GET(request: Request) {
     .from("church_book_selections")
     .select("*")
     .eq("user_id", authed.user.id)
-    .maybeSingle();
+    .order("selected_at", { ascending: true });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  return NextResponse.json({ selection: data });
+  return NextResponse.json({ selections: data ?? [] });
 }
 
 export async function POST(request: Request) {
@@ -26,12 +26,39 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "알 수 없는 책입니다." }, { status: 400 });
   }
 
-  const { data, error } = await authed.client
+  const { error } = await authed.client
     .from("church_book_selections")
-    .upsert({ user_id: authed.user.id, book_id: bookId }, { onConflict: "user_id" })
-    .select()
-    .single();
+    .insert({ user_id: authed.user.id, book_id: bookId });
+  // 23505 = unique_violation — the book is already selected, which is fine.
+  if (error && error.code !== "23505") {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  const { data, error: selectError } = await authed.client
+    .from("church_book_selections")
+    .select("*")
+    .eq("user_id", authed.user.id)
+    .order("selected_at", { ascending: true });
+  if (selectError) return NextResponse.json({ error: selectError.message }, { status: 500 });
+
+  return NextResponse.json({ selections: data ?? [] });
+}
+
+export async function DELETE(request: Request) {
+  const authed = await requireUser(request);
+  if (!authed) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  const bookId = new URL(request.url).searchParams.get("bookId") ?? "";
+  if (!findBook(bookId)) {
+    return NextResponse.json({ error: "알 수 없는 책입니다." }, { status: 400 });
+  }
+
+  const { error } = await authed.client
+    .from("church_book_selections")
+    .delete()
+    .eq("user_id", authed.user.id)
+    .eq("book_id", bookId);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  return NextResponse.json({ selection: data });
+  return NextResponse.json({ ok: true });
 }

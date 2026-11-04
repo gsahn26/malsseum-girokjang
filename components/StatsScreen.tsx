@@ -1,7 +1,7 @@
 "use client";
 
-import { currentWeek, longestStreak, weekCompletedCount, type PlanDay } from "@/lib/plan";
-import type { DayState } from "@/lib/types";
+import { currentWeek, longestStreak, weekCompletedCount } from "@/lib/plan";
+import type { BookEntry } from "@/app/page";
 
 function StatCard({ label, value, unit }: { label: string; value: number | string; unit?: string }) {
   return (
@@ -15,17 +15,8 @@ function StatCard({ label, value, unit }: { label: string; value: number | strin
   );
 }
 
-export default function StatsScreen({
-  nickname,
-  bookName,
-  planDays,
-  dayState,
-}: {
-  nickname: string;
-  bookName: string;
-  planDays: PlanDay[];
-  dayState: DayState;
-}) {
+function BookStats({ entry }: { entry: BookEntry }) {
+  const { book, planDays, dayState } = entry;
   const totalDays = planDays.length;
   const doneCount = planDays.filter((d) => dayState.get(d.day) === "check").length;
   const progress = totalDays > 0 ? Math.round((doneCount / totalDays) * 100) : 0;
@@ -35,23 +26,39 @@ export default function StatsScreen({
   const remaining = totalDays - doneCount;
 
   return (
-    <div className="flex flex-1 flex-col overflow-y-auto px-5 pb-6 pt-8">
-      <p className="mb-1 text-sm text-muted">{nickname}님의 {bookName} 기록</p>
-      <h1 className="mb-6 text-2xl font-semibold">내 통계</h1>
-
+    <div className="mb-6">
+      <h2 className="mb-3 text-lg font-semibold">{book.nameKo}</h2>
       <div className="grid grid-cols-2 gap-3">
         <StatCard label="읽은 날" value={doneCount} unit="일" />
         <StatCard label="진행률" value={progress} unit="%" />
         <StatCard label={`${week}주차 완료`} value={thisWeek} unit="/7일" />
         <StatCard label="연속 완독" value={streak} unit="일" />
       </div>
-
       <div className="mt-3 rounded-xl border border-border bg-card px-4 py-4">
         <p className="text-xs text-muted">완주까지 남은 날</p>
         <p className="mt-1 text-2xl font-semibold">
           {remaining === 0 ? "완주! 🎉" : `${remaining}일`}
         </p>
       </div>
+    </div>
+  );
+}
+
+export default function StatsScreen({
+  nickname,
+  books,
+}: {
+  nickname: string;
+  books: BookEntry[];
+}) {
+  return (
+    <div className="flex flex-1 flex-col overflow-y-auto px-5 pb-6 pt-8">
+      <p className="mb-1 text-sm text-muted">{nickname}님의 기록</p>
+      <h1 className="mb-6 text-2xl font-semibold">내 통계</h1>
+
+      {books.map((entry) => (
+        <BookStats key={entry.book.id} entry={entry} />
+      ))}
     </div>
   );
 }

@@ -3,7 +3,14 @@
 import { useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
-import { fetchBookSelection, fetchProfile, fetchUserEvents, insertEvent, saveBookSelection } from "@/lib/data";
+import {
+  addBookSelection,
+  fetchBookSelections,
+  fetchProfile,
+  fetchUserEvents,
+  insertEvent,
+  removeBookSelection,
+} from "@/lib/data";
 import { findBook, type Book } from "@/lib/books";
 import { buildPlanDays, type PlanDay } from "@/lib/plan";
 import type { DayState, Profile } from "@/lib/types";
@@ -18,31 +25,44 @@ import BottomNav, { type Tab } from "@/components/BottomNav";
 
 type Phase = "loading" | "login" | "nickname" | "selectBook" | "app" | "error";
 
+export interface BookEntry {
+  book: Book;
+  planDays: PlanDay[];
+  dayState: DayState;
+}
+
 export default function Home() {
   const [phase, setPhase] = useState<Phase>("loading");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [book, setBook] = useState<Book | null>(null);
-  const [planDays, setPlanDays] = useState<PlanDay[]>([]);
-  const [dayState, setDayState] = useState<DayState>(new Map());
+  const [books, setBooks] = useState<BookEntry[]>([]);
+  const [activeBookId, setActiveBookId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("plan");
   const [pendingDay, setPendingDay] = useState<number | null>(null);
   const [bookSaving, setBookSaving] = useState(false);
   const [bookError, setBookError] = useState<string | null>(null);
+  const [addingBook, setAddingBook] = useState(false);
 
-  async function loadBookAndEvents() {
-    const selection = await fetchBookSelection();
-    const selectedBook = selection ? findBook(selection.book_id) : undefined;
-    if (!selectedBook) {
+  async function loadBooksAndEvents() {
+    const selections = await fetchBookSelections();
+    const knownSelections = selections.filter((s) => findBook(s.book_id));
+    if (knownSelections.length === 0) {
+      setBooks([]);
+      setActiveBookId(null);
       setPhase("selectBook");
       return;
     }
-    const days = buildPlanDays(selectedBook);
-    const state = await fetchUserEvents(selectedBook.id);
-    setBook(selectedBook);
-    setPlanDays(days);
-    setDayState(state);
+    const entries = await Promise.all(
+      knownSelections.map(async (selection) => {
+        const book = findBook(selection.book_id) as Book;
+        const planDays = buildPlanDays(book);
+        const dayState = await fetchUserEvents(book.id);
+        return { book, planDays, dayState };
+      })
+    );
+    setBooks(entries);
+    setActiveBookId((prev) => (prev && entries.some((e) => e.book.id === prev) ? prev : entries[0].book.id));
     setPhase("app");
   }
 
@@ -64,7 +84,7 @@ export default function Home() {
         }
         setProfile(existingProfile);
         if (cancelled) return;
-        await loadBookAndEvents();
+        await loadBooksAndEvents();
       } catch (err) {
         if (cancelled) return;
         setLoadError(err instanceof Error ? err.message : "불러오는 중 문제가 발생했습니다.");
@@ -91,16 +111,11 @@ export default function Home() {
     setBookSaving(true);
     setBookError(null);
     try {
-      await saveBookSelection(bookId);
-      const selectedBook = findBook(bookId);
-      if (!selectedBook) throw new Error("알 수 없는 책입니다.");
-      const days = buildPlanDays(selectedBook);
-      const state = await fetchUserEvents(selectedBook.id);
-      setBook(selectedBook);
-      setPlanDays(days);
-      setDayState(state);
+      await addBookSelection(bookId);
+      await loadBooksAndEvents();
+      setActiveBookId(bookId);
+      setAddingBook(false);
       setTab("plan");
-      setPhase("app");
     } catch (err) {
       setBookError(err instanceof Error ? err.message : "책을 선택하지 못했습니다.");
     } finally {
@@ -108,18 +123,33 @@ export default function Home() {
     }
   }
 
-  async function handleToggle(day: number) {
-    if (!session || !book || pendingDay !== null) return;
-    const current = dayState.get(day) === "check" ? "check" : "uncheck";
+  async function handleRemoveBook(bookId: string) {
+    if (!session) return;
+    try {
+      await removeBookSelection(bookId);
+      await loadBooksAndEvents();
+    } catch {
+      // leave state unchanged — the next sync will reflect the true server state
+    }
+  }
+
+  async function handleToggle(bookId: string, day: number) {
+    if (!session || pendingDay !== null) return;
+    const entry = books.find((e) => e.book.id === bookId);
+    if (!entry) return;
+    const current = entry.dayState.get(day) === "check" ? "check" : "uncheck";
     const next = current === "check" ? "uncheck" : "check";
     setPendingDay(day);
     try {
-      await insertEvent(book.id, day, next);
-      setDayState((prev) => {
-        const copy = new Map(prev);
-        copy.set(day, next);
-        return copy;
-      });
+      await insertEvent(bookId, day, next);
+      setBooks((prev) =>
+        prev.map((e) => {
+          if (e.book.id !== bookId) return e;
+          const copy = new Map(e.dayState);
+          copy.set(day, next);
+          return { ...e, dayState: copy };
+        })
+      );
     } catch {
       // leave state unchanged — the next sync will reflect the true server state
     } finally {
@@ -159,7 +189,7 @@ export default function Home() {
       <NicknameScreen
         onDone={(created) => {
           setProfile(created);
-          loadBookAndEvents().catch((err) => {
+          loadBooksAndEvents().catch((err) => {
             setLoadError(err instanceof Error ? err.message : "불러오는 중 문제가 발생했습니다.");
             setPhase("error");
           });
@@ -179,35 +209,48 @@ export default function Home() {
     );
   }
 
-  if (phase === "app" && session && profile && book) {
+  if (phase === "app" && session && profile && books.length > 0) {
+    const activeEntry = books.find((e) => e.book.id === activeBookId) ?? books[0];
+
+    if (addingBook) {
+      return (
+        <BookSelectScreen
+          nickname={profile.nickname}
+          saving={bookSaving}
+          error={bookError}
+          title="어떤 책을 더 읽으시겠어요?"
+          excludeIds={books.map((e) => e.book.id)}
+          onSelect={handleSelectBook}
+          onCancel={() => {
+            setAddingBook(false);
+            setBookError(null);
+          }}
+        />
+      );
+    }
+
     return (
       <div className="flex min-h-dvh flex-col">
         {tab === "plan" && (
           <PlanScreen
             nickname={profile.nickname}
-            bookName={book.nameKo}
-            planDays={planDays}
-            dayState={dayState}
+            books={books}
+            activeBookId={activeEntry.book.id}
             pendingDay={pendingDay}
-            onToggle={handleToggle}
-            onChangeBook={() => setPhase("selectBook")}
+            onChangeActive={setActiveBookId}
+            onToggle={(day) => handleToggle(activeEntry.book.id, day)}
+            onAddBook={() => setAddingBook(true)}
+            onRemoveBook={handleRemoveBook}
           />
         )}
-        {tab === "stats" && (
-          <StatsScreen
-            nickname={profile.nickname}
-            bookName={book.nameKo}
-            planDays={planDays}
-            dayState={dayState}
-          />
-        )}
+        {tab === "stats" && <StatsScreen nickname={profile.nickname} books={books} />}
         {tab === "church" && <ChurchScreen myUserId={session.user.id} />}
         {tab === "share" && (
           <ShareScreen
             nickname={profile.nickname}
-            bookName={book.nameKo}
-            planDays={planDays}
-            dayState={dayState}
+            bookName={activeEntry.book.nameKo}
+            planDays={activeEntry.planDays}
+            dayState={activeEntry.dayState}
           />
         )}
         <BottomNav active={tab} onChange={setTab} />

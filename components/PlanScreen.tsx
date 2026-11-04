@@ -1,25 +1,29 @@
 "use client";
 
+import type { BookEntry } from "@/app/page";
 import type { PlanDay } from "@/lib/plan";
-import type { DayState } from "@/lib/types";
 
 export default function PlanScreen({
   nickname,
-  bookName,
-  planDays,
-  dayState,
+  books,
+  activeBookId,
   pendingDay,
+  onChangeActive,
   onToggle,
-  onChangeBook,
+  onAddBook,
+  onRemoveBook,
 }: {
   nickname: string;
-  bookName: string;
-  planDays: PlanDay[];
-  dayState: DayState;
+  books: BookEntry[];
+  activeBookId: string;
   pendingDay: number | null;
+  onChangeActive: (bookId: string) => void;
   onToggle: (day: number) => void;
-  onChangeBook: () => void;
+  onAddBook: () => void;
+  onRemoveBook: (bookId: string) => void;
 }) {
+  const active = books.find((e) => e.book.id === activeBookId) ?? books[0];
+  const { book, planDays, dayState } = active;
   const doneCount = planDays.filter((d) => dayState.get(d.day) === "check").length;
   const progress = planDays.length > 0 ? Math.round((doneCount / planDays.length) * 100) : 0;
   const weeks: PlanDay[][] = [];
@@ -27,13 +31,46 @@ export default function PlanScreen({
     weeks.push(planDays.slice(i, i + 7));
   }
 
+  function handleRemove() {
+    if (window.confirm(`${book.nameKo} 통독을 그만할까요? 기록은 사라지지 않아요.`)) {
+      onRemoveBook(book.id);
+    }
+  }
+
   return (
     <div className="flex flex-1 flex-col overflow-y-auto px-5 pb-6 pt-8">
+      <div className="mb-5">
+        <p className="mb-2 text-sm text-muted">{nickname}님, 통독 중</p>
+        <div className="flex flex-wrap items-center gap-2">
+          {books.map((entry) => (
+            <button
+              key={entry.book.id}
+              type="button"
+              onClick={() => onChangeActive(entry.book.id)}
+              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                entry.book.id === book.id
+                  ? "border-accent bg-accent text-white"
+                  : "border-border bg-card text-muted"
+              }`}
+            >
+              {entry.book.nameKo}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={onAddBook}
+            className="rounded-full border border-dashed border-border px-3 py-1.5 text-xs font-medium text-muted"
+          >
+            + 책 추가
+          </button>
+        </div>
+      </div>
+
       <div className="mb-6">
         <div className="flex items-center justify-between">
-          <p className="text-sm text-muted">{nickname}님, {bookName} 통독</p>
-          <button type="button" onClick={onChangeBook} className="text-xs text-accent underline">
-            책 변경
+          <p className="text-sm text-muted">{book.nameKo} 통독</p>
+          <button type="button" onClick={handleRemove} className="text-xs text-muted underline">
+            그만 읽기
           </button>
         </div>
         <div className="mt-2 flex items-end justify-between">
