@@ -1,3 +1,7 @@
+# 말씀기록장
+
+🔗 배포 주소: [https://malsseum-girokjang.vercel.app](https://malsseum-girokjang.vercel.app)
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
